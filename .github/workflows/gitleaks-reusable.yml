@@ -1,0 +1,50 @@
+name: Gitleaks Secret Scan (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: "Relative path to a .gitleaks.toml in the calling repo (optional)"
+        type: string
+        required: false
+        default: ""
+      fail-on-leak:
+        description: "Exit with error if leaks found (set false to warn-only)"
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  gitleaks:
+    name: Detect Secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        id: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        continue-on-error: ${{ !inputs.fail-on-leak }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: >-
+            detect
+            --redact
+            --verbose
+            ${{ inputs.config-path != '' && format('--config={0}', inputs.config-path) || '' }}
+
+      - name: Annotate PR on failure
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: "🚨 **Gitleaks detected potential secrets in this PR.** Please review the Actions log, rotate any exposed credentials, and rewrite git history if needed before merging."
+            })
