@@ -24,18 +24,25 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install Gitleaks
+        run: |
+          GITLEAKS_VER=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
+            | grep '"tag_name"' | cut -d'"' -f4)
+          curl -sSfL \
+            "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VER}/gitleaks_${GITLEAKS_VER#v}_linux_x64.tar.gz" \
+            | tar -xz -C /tmp gitleaks
+          sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
+          echo "Installed $(gitleaks version)"
+
       - name: Run Gitleaks
         id: gitleaks
-        uses: gitleaks/gitleaks-action@v2
         continue-on-error: ${{ !inputs.fail-on-leak }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          args: >-
-            detect
-            --redact
-            --verbose
-            ${{ inputs.config-path != '' && format('--config={0}', inputs.config-path) || '' }}
+        run: |
+          ARGS="detect --redact --verbose"
+          if [ -n "${{ inputs.config-path }}" ]; then
+            ARGS="$ARGS --config=${{ inputs.config-path }}"
+          fi
+          gitleaks $ARGS
 
       - name: Annotate PR on failure
         if: failure() && github.event_name == 'pull_request'
